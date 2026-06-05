@@ -92,6 +92,7 @@ class VesselClassifierML:
         
     def evaluate(self, X_test: np.ndarray, y_test: np.ndarray):
         """Evaluate the model on a hold-out test set and print classification metrics."""
+        
         y_pred = self.model.predict(X_test)
         
         print(classification_report(y_test, y_pred, target_names=["Tło", "Naczynie"]))
