@@ -3,6 +3,9 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix, accuracy_score, balanced_accuracy_score
 from skimage.measure import moments_central, moments_normalized, moments_hu
+from pathlib import Path
+from utils.loader import Loader
+from przetwarzanie import VesselExtractor
 
 class PatchFeatureExtractor:
     """Extracts features from 5x5 patches around given coordinates in the image."""
@@ -130,3 +133,76 @@ class VesselClassifierML:
             mask[cy, cx] = int(y_pred[idx] * 255)
             
         return mask
+
+def main():
+    INPUT_DIR = Path("./data/input/")
+    LABEL_DIR = Path("./data/label/")
+    
+    all_input_paths = sorted(list(INPUT_DIR.glob("*.ppm")))
+    all_label_paths = sorted(list(LABEL_DIR.glob("*.vk.ppm")))
+    
+    split_index = int(len(all_input_paths) * 0.75) 
+    train_inputs = all_input_paths[:split_index]
+    test_inputs = all_input_paths[split_index:]
+    
+    extractor = VesselExtractor()
+    dataset_builder = DatasetBuilder()
+
+    X_train_list = []
+    y_train_list = []
+    
+    print(f"Zbieranie cech z {len(train_inputs)} obrazów treningowych...")
+    for img_path in train_inputs:
+
+        print(f"Przetwarzanie {img_path.name}...")
+
+        label_path = LABEL_DIR / f"{img_path.stem}.vk.ppm" 
+        
+        rgb_image = Loader.load_rgb_image(str(img_path))
+        expert_mask = Loader.load_gray_image(str(label_path))
+        green_channel = rgb_image[:, :, 1]
+        
+        roi_mask = extractor.extract_roi(green_channel)
+        _, vessel_response = extractor.enhance_vessels(green_channel)
+    
+        x_img, y_img = dataset_builder.build_dataset(
+            image=vessel_response, 
+            expert_mask=expert_mask, 
+            roi_mask=roi_mask, 
+            patch_size=5
+        )
+        
+        X_train_list.append(x_img)
+        y_train_list.append(y_img)
+
+
+    X_train_final = np.vstack(X_train_list)
+    y_train_final = np.concatenate(y_train_list)
+
+   
+    classifier = VesselClassifierML(n_estimators=50)
+    print(f"Trenowanie na łącznej liczbie {len(y_train_final)} wycinków (pół naczynia, pół tło)...")
+    classifier.train(X_train_final, y_train_final)
+  
+    print("\nTestowanie na zbiorze hold-out...")
+    for img_path in test_inputs:
+
+        print(f"Przetwarzanie {img_path.name}...")
+        label_path = LABEL_DIR / f"{img_path.stem}.vk.ppm"
+        
+        rgb_image = Loader.load_rgb_image(str(img_path))
+        expert_mask = Loader.load_gray_image(str(label_path))
+        green_channel = rgb_image[:, :, 1]
+        
+        roi_mask = extractor.extract_roi(green_channel)
+        _, vessel_response = extractor.enhance_vessels(green_channel)
+        
+        test_coords = np.argwhere(roi_mask > 0)
+        
+        X_test = classifier.extractor.extract_features(vessel_response, test_coords)
+        y_test = expert_mask[test_coords[:, 0], test_coords[:, 1]] > 0
+        
+        classifier.evaluate(X_test=X_test, y_test=y_test)
+
+if __name__ == "__main__":
+    main()

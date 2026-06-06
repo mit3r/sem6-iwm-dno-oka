@@ -30,6 +30,9 @@ class ExtractionResult:
 class VesselExtractor:
     """Extract retinal vessels with preprocessing, Frangi response and morphological cleanup."""
 
+    def __init__(self) -> None:
+        pass
+
     def process(self, image_path: Path, output_mask_path: Path, save_overlay: bool = True) -> ExtractionResult:
         """Run the full vessel extraction pipeline and save the mask and optionally the overlay.
         
@@ -44,8 +47,8 @@ class VesselExtractor:
         rgb_image = self._load_rgb(image_path)
         green_channel = rgb_image[:, :, 1]
 
-        denoised, vessel_response = self._enhance_vessels(green_channel)
-        roi = self._extract_roi(green_channel)
+        denoised, vessel_response = self.enhance_vessels(green_channel)
+        roi = self.extract_roi(green_channel)
         vessel_mask = self._segment_vessels(vessel_response, roi)
 
         output_mask_path.parent.mkdir(parents=True, exist_ok=True)
@@ -79,7 +82,7 @@ class VesselExtractor:
             return np.zeros_like(image, dtype=np.float32)
         return (image - min_value) / (max_value - min_value)
 
-    def _extract_roi(self, green_channel: np.ndarray) -> np.ndarray:
+    def extract_roi(self, green_channel: np.ndarray) -> np.ndarray:
         """Find the retinal field of view and suppress background outside the fundus."""
         blurred = filters.gaussian(green_channel, sigma=5.0)
         if float(blurred.max()) <= float(blurred.min()):
@@ -87,8 +90,8 @@ class VesselExtractor:
 
         threshold = threshold_otsu(blurred)
         roi = blurred > (threshold * 0.8)
-        roi = morphology.remove_small_objects(roi, min_size=5_000)
-        roi = morphology.remove_small_holes(roi, area_threshold=5_000)
+        roi = morphology.remove_small_objects(roi, max_size=5_000)
+        roi = morphology.remove_small_holes(roi, max_size=5_000)
         roi = morphology.closing(roi, morphology.disk(8))
 
         labeled = measure.label(roi)
@@ -98,7 +101,7 @@ class VesselExtractor:
         largest_region = max(measure.regionprops(labeled), key=lambda region: region.area)
         return labeled == largest_region.label
 
-    def _enhance_vessels(self, green_channel: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def enhance_vessels(self, green_channel: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Improve contrast, suppress noise and compute the Frangi vessel response.
         
         Uses adaptive histogram equalization followed by Gaussian smoothing, then applies
@@ -131,8 +134,8 @@ class VesselExtractor:
 
         vessels = morphology.closing(vessels, morphology.disk(2))
         vessels = morphology.opening(vessels, morphology.disk(1))
-        vessels = morphology.remove_small_objects(vessels, min_size=120)
-        vessels = morphology.remove_small_holes(vessels, area_threshold=120)
+        vessels = morphology.remove_small_objects(vessels, max_size=120)
+        vessels = morphology.remove_small_holes(vessels, max_size=120)
         vessels &= roi
         return vessels
 
