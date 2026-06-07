@@ -49,7 +49,7 @@ def main():
     
     BATCH_SIZE = 2      
     EPOCHS = 30        
-    LEARNING_RATE = 1e-4
+    LEARNING_RATE = 1e-3
     IMAGE_SIZE = 512   
     
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
