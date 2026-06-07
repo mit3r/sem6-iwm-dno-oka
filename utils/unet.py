@@ -6,7 +6,7 @@ class DoubleConv(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.double_conv = nn.Sequential(
-            # padding=1 pozwala zachować oryginalne wymiary obrazu po konwolucji (tzw. Same Padding)
+          
             nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
             nn.BatchNorm2d(out_channels),
             nn.ReLU(inplace=True),
@@ -69,20 +69,18 @@ class UNet(nn.Module):
         self.n_classes = n_classes
 
     
-        self.inc = DoubleConv(n_channels, 64)
-        self.down1 = Down(64, 128)
-        self.down2 = Down(128, 256)
-        self.down3 = Down(256, 512)
-        
+        self.inc = DoubleConv(n_channels, 32)
+        self.down1 = Down(32, 64)
+        self.down2 = Down(64, 128)
+        self.down3 = Down(128, 256)
+        self.down4 = Down(256, 512)
 
-        self.down4 = Down(512, 1024)
-
-        self.up1 = Up(1024, 512)
-        self.up2 = Up(512, 256)
-        self.up3 = Up(256, 128)
-        self.up4 = Up(128, 64)
+        self.up1 = Up(512, 256)
+        self.up2 = Up(256, 128)
+        self.up3 = Up(128, 64)
+        self.up4 = Up(64, 32)
       
-        self.outc = OutConv(64, n_classes)
+        self.outc = OutConv(32, n_classes)
 
     def forward(self, x):
 
