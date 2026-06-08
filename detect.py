@@ -7,9 +7,54 @@ from PIL import Image
 from torchvision import transforms
 
 from utils.unet import UNet
+from utils.filters import Filters
+
+from skimage.filters import frangi, threshold_otsu, gaussian
+from skimage.morphology import remove_small_objects, closing, disk
+import warnings
 
 from przetwarzanie import VesselExtractor
 from klasyfikator import PatchFeatureExtractor 
+
+
+class BasicImageProcessor:
+    """Klasa implementująca algorytm detekcji naczyń oparty na klasycznym przetwarzaniu obrazów."""
+    
+    def process(self, rgb_image: np.ndarray, roi_mask: np.ndarray = None) -> np.ndarray:
+        # a) Wstępne przetworzenie
+        green_channel = rgb_image[:, :, 1]
+        
+        # Normalizacja histogramu wykorzystująca gotową klasę z utils
+        normalized = Filters.normalize_histogram(green_channel)
+        
+        # Delikatne rozmycie Gaussa do usunięcia szumu
+        blurred = gaussian(normalized, sigma=1.0)
+        
+        # b) Właściwe przetworzenie (detekcja cech)
+        # Filtr Frangi'ego (wzmocnienie struktur rurkowatych)
+        # Naczynia są zazwyczaj ciemniejsze, więc ustawiamy black_ridges=True
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            vessels = frangi(blurred, sigmas=range(1, 5, 1), black_ridges=True)
+            
+        # c) Końcowe przetworzenie
+        # Automatyczne progowanie metodą Otsu na podstawie roi_mask
+        if roi_mask is not None and np.any(roi_mask):
+            roi_vessels = vessels[roi_mask > 0]
+            thresh = threshold_otsu(roi_vessels) if len(roi_vessels) > 0 else 0
+        else:
+            thresh = threshold_otsu(vessels)
+            
+        binary_mask = vessels > thresh
+        
+        # Morfologia: usunięcie drobnego szumu i "połatanie" przerywanych naczyń
+        binary_mask = remove_small_objects(binary_mask, min_size=50)
+        binary_mask = closing(binary_mask, disk(2))
+        
+        if roi_mask is not None:
+            binary_mask = binary_mask & (roi_mask > 0)
+            
+        return (binary_mask * 255).astype(np.uint8)
 
 
 class VesselDetector:
@@ -19,14 +64,17 @@ class VesselDetector:
         self.model_path = Path(model_path)
         self.threshold = threshold
   
-        if self.model_path.suffix == '.pth':
+        if self.model_path.name == 'basic_ip':
+            self.model_type = 'basic_ip'
+            self._init_basic_ip()
+        elif self.model_path.suffix == '.pth':
             self.model_type = 'unet'
             self._init_unet()
         elif self.model_path.suffix == '.joblib':
             self.model_type = 'random_forest'
             self._init_random_forest()
         else:
-            raise ValueError(f"Nieobsługiwany format pliku: {self.model_path.suffix}. Użyj .pth lub .joblib")
+            raise ValueError(f"Nieobsługiwany format pliku: {self.model_path.suffix}. Użyj .pth, .joblib lub nazwy 'basic_ip'")
 
     def _init_unet(self):
         """Inicjalizacja środowiska dla sieci U-Net."""
@@ -53,12 +101,19 @@ class VesselDetector:
         self.feature_extractor = PatchFeatureExtractor(patch_size=5)
         self.roi_extractor = VesselExtractor()
 
+    def _init_basic_ip(self):
+        """Inicjalizacja środowiska dla klasycznego przetwarzania obrazu."""
+        self.processor = BasicImageProcessor()
+        self.roi_extractor = VesselExtractor()
+
     def detect(self, image_path: str | Path) -> np.ndarray:
         """Przetwarza obraz i zwraca binarną maskę naczyń w oryginalnej rozdzielczości."""
         if self.model_type == 'unet':
             return self._detect_unet(image_path)
         elif self.model_type == 'random_forest':
             return self._detect_random_forest(image_path)
+        elif self.model_type == 'basic_ip':
+            return self._detect_basic_ip(image_path)
 
     def _detect_unet(self, image_path: str | Path) -> np.ndarray:
         rgb_image = Image.open(image_path).convert("RGB")
@@ -98,6 +153,14 @@ class VesselDetector:
             
         return mask
 
+    def _detect_basic_ip(self, image_path: str | Path) -> np.ndarray:
+        rgb_image = np.array(Image.open(image_path).convert("RGB"))
+        green_channel = rgb_image[:, :, 1]
+        
+        roi_mask = self.roi_extractor.extract_roi(green_channel)
+        
+        return self.processor.process(rgb_image, roi_mask)
+
 
 if __name__ == "__main__":
     
@@ -113,4 +176,9 @@ if __name__ == "__main__":
     mask_rf = detector_rf.detect(test_image)
     Image.fromarray(mask_rf).save("./data/output/wynik_rf.png")
     
-    print("\nGotowe! Obie maski zostały zapisane w folderze wyjściowym.")
+    print("\n--- Uruchamianie Basic Image Processing ---")
+    detector_ip = VesselDetector(model_path="basic_ip")
+    mask_ip = detector_ip.detect(test_image)
+    Image.fromarray(mask_ip).save("./data/output/wynik_ip.png")
+    
+    print("\nGotowe! Wszystkie maski zostały zapisane w folderze wyjściowym.")
