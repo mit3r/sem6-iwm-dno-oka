@@ -134,15 +134,14 @@ class VesselClassifierML:
 
 
 def main():
-    INPUT_DIR = Path("./data/input/")
-    LABEL_DIR = Path("./data/label/")
+    TRAIN_INPUT_DIR = Path("./data/train/input/")
+    TRAIN_LABEL_DIR = Path("./data/train/label/")
+    TEST_INPUT_DIR = Path("./data/test/input/")
+    TEST_LABEL_DIR = Path("./data/test/label/")
+    SUPPORTED_EXTS = {".ppm", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
     
-    all_input_paths = sorted(list(INPUT_DIR.glob("*.ppm")))
-    all_label_paths = sorted(list(LABEL_DIR.glob("*.vk.ppm")))
-    
-    split_index = int(len(all_input_paths) * 0.75) 
-    train_inputs = all_input_paths[:split_index]
-    test_inputs = all_input_paths[split_index:]
+    train_inputs = sorted([p for p in TRAIN_INPUT_DIR.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS])
+    test_inputs = sorted([p for p in TEST_INPUT_DIR.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS])
     
     extractor = VesselExtractor()
     dataset_builder = DatasetBuilder()
@@ -153,7 +152,12 @@ def main():
     print(f"ZBIERANIE DANYCH ({len(train_inputs)} obrazów")
     for img_path in train_inputs:
         print(f"Przetwarzanie {img_path.name}...")
-        label_path = LABEL_DIR / f"{img_path.stem}.vk.ppm" 
+        
+        label_candidates = [l for l in TRAIN_LABEL_DIR.iterdir() if l.is_file() and img_path.stem in l.name]
+        if not label_candidates:
+            print(f"Brak maski eksperckiej dla {img_path.name}, pomijanie...")
+            continue
+        label_path = label_candidates[0]
         
         rgb_image = Loader.load_rgb_image(str(img_path))
         expert_mask = Loader.load_gray_image(str(label_path))
@@ -186,7 +190,12 @@ def main():
     print(f"\nTESTOWANIE")
     for img_path in test_inputs:
         print(f"Ewaluacja {img_path.name}...")
-        label_path = LABEL_DIR / f"{img_path.stem}.vk.ppm"
+        
+        label_candidates = [l for l in TEST_LABEL_DIR.iterdir() if l.is_file() and img_path.stem in l.name]
+        if not label_candidates:
+            print(f"Brak maski eksperckiej dla {img_path.name}, pomijanie...")
+            continue
+        label_path = label_candidates[0]
         
         rgb_image = Loader.load_rgb_image(str(img_path))
         expert_mask = Loader.load_gray_image(str(label_path))

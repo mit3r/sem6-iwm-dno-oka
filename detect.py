@@ -164,7 +164,12 @@ class VesselDetector:
 
 if __name__ == "__main__":
     
-    test_image = "./data/input/im0001.ppm"
+    test_dir = Path("./data/test/input/")
+    supported_exts = {".ppm", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
+    test_images = [p for p in test_dir.iterdir() if p.is_file() and p.suffix.lower() in supported_exts]
+    if not test_images:
+        raise FileNotFoundError("Brak obrazów testowych w ./data/test/input/")
+    test_image = str(test_images[0])
    
     print("\n--- Uruchamianie U-Net ---")
     detector_unet = VesselDetector(model_path="./model/unet_vessels.pth", threshold=0.5)

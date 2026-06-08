@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+﻿﻿from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -157,7 +157,8 @@ class VesselExtractor:
 
     def _label_path_for(self, image_path: Path) -> Path:
         """Build the path to the expert label matching the current image."""
-        return LABEL_DIR / f"{image_path.stem}.vk.ppm"
+        candidates = [l for l in LABEL_DIR.iterdir() if l.is_file() and image_path.stem in l.name]
+        return candidates[0] if candidates else LABEL_DIR / f"{image_path.stem}.vk.ppm"
 
 
 

@@ -46,9 +46,12 @@ class FundusDataset(Dataset):
 
 def main():
   
-    INPUT_DIR = Path("./data/input/")
-    LABEL_DIR = Path("./data/label/")
+    TRAIN_INPUT_DIR = Path("./data/train/input/")
+    TRAIN_LABEL_DIR = Path("./data/train/label/")
+    TEST_INPUT_DIR = Path("./data/test/input/")
+    TEST_LABEL_DIR = Path("./data/test/label/")
     MODEL_SAVE_PATH = Path("./model/unet_vessels.pth")
+    MODEL_SAVE_PATH.parent.mkdir(parents=True, exist_ok=True)
     
     BATCH_SIZE = 2      
     EPOCHS = 30        
@@ -58,16 +61,31 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Rozpoczynam trening na urządzeniu: {device}")
 
-    all_input_paths = sorted(list(INPUT_DIR.glob("*.ppm")))
-    if not all_input_paths:
-        raise RuntimeError("Brak obrazów wejściowych!")
-   
-    all_label_paths = [LABEL_DIR / f"{p.stem}.vk.ppm" for p in all_input_paths]
+    SUPPORTED_EXTS = {".ppm", ".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp"}
 
-  
-    split_idx = int(len(all_input_paths) * 0.8)
-    train_dataset = FundusDataset(all_input_paths[:split_idx], all_label_paths[:split_idx], image_size=IMAGE_SIZE)
-    val_dataset = FundusDataset(all_input_paths[split_idx:], all_label_paths[split_idx:], image_size=IMAGE_SIZE)
+    train_input_paths = sorted([p for p in TRAIN_INPUT_DIR.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS])
+    if not train_input_paths:
+        raise RuntimeError("Brak obrazów treningowych w folderze train!")
+        
+    train_label_paths = []
+    for p in train_input_paths:
+        lbls = [l for l in TRAIN_LABEL_DIR.iterdir() if l.is_file() and p.stem in l.name]
+        if not lbls:
+            raise RuntimeError(f"Brak maski dla obrazu {p.name} w {TRAIN_LABEL_DIR}!")
+        train_label_paths.append(lbls[0])
+
+    test_input_paths = sorted([p for p in TEST_INPUT_DIR.iterdir() if p.is_file() and p.suffix.lower() in SUPPORTED_EXTS])
+    if not test_input_paths:
+        raise RuntimeError("Brak obrazów testowych w folderze test!")
+    test_label_paths = []
+    for p in test_input_paths:
+        lbls = [l for l in TEST_LABEL_DIR.iterdir() if l.is_file() and p.stem in l.name]
+        if not lbls:
+            raise RuntimeError(f"Brak maski dla obrazu {p.name} w {TEST_LABEL_DIR}!")
+        test_label_paths.append(lbls[0])
+
+    train_dataset = FundusDataset(train_input_paths, train_label_paths, image_size=IMAGE_SIZE)
+    val_dataset = FundusDataset(test_input_paths, test_label_paths, image_size=IMAGE_SIZE)
 
     train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE, shuffle=False)
@@ -119,7 +137,16 @@ def main():
     
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
-            torch.save(model.state_dict(), MODEL_SAVE_PATH)
+            
+            # Zapis do pliku tymczasowego i zamiana, aby uniknąć błędu 1224 na Windowsie
+            temp_save_path = MODEL_SAVE_PATH.with_suffix('.tmp')
+            torch.save(model.state_dict(), temp_save_path)
+            try:
+                temp_save_path.replace(MODEL_SAVE_PATH)
+            except PermissionError:
+                time.sleep(0.5)
+                temp_save_path.replace(MODEL_SAVE_PATH)
+                
             print(f" -> Zapisano nowy najlepszy model! (Strata z {best_val_loss:.4f})")
 
     print(f"\nWagi modelu zostały zapisane w {MODEL_SAVE_PATH.absolute()}")
