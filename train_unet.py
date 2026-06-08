@@ -24,7 +24,7 @@ class FundusDataset(Dataset):
     def __len__(self):
         return len(self.input_paths)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, torch.Tensor]:
     
         img_path = self.input_paths[idx]
         mask_path = self.label_paths[idx]
@@ -35,9 +35,12 @@ class FundusDataset(Dataset):
         expert_mask = Image.open(mask_path).convert("L")
 
         x_tensor = self.transform(green_channel)
-        y_tensor = self.transform(expert_mask)  
+        y_tensor = self.transform(expert_mask)
 
-        y_tensor = (y_tensor > 0).float()
+        if not isinstance(x_tensor, torch.Tensor) or not isinstance(y_tensor, torch.Tensor):
+            raise TypeError("Expected transforms to return a torch.Tensor")
+
+        y_tensor = (y_tensor > 0.0).to(torch.float32)
 
         return x_tensor, y_tensor
 
